@@ -49,6 +49,26 @@ const config={
 };
 const game=new Phaser.Game(config);
 let player, cursors, keys, camera, worldLayer, bedColliders, pickupPumpkins, collected=0, carriedValues=[], pickupHud, deliveryCrate, deliveryLabel, carriedPumpkin, carriedPumpkinValue, targetCrates=[], targetValues=[12,10,8], points=0, plusPairs=0, tenFriendPairs=0, heldPumpkin=null, lastDir="south";
+// Robust keyboard state for hosted browsers: track physical keydown/keyup and clear on focus loss.
+const heldKeys = new Set();
+let actionJustPressed = false;
+let dropJustPressed = false;
+window.addEventListener("keydown", (event) => {
+  const code = event.code;
+  if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","KeyW","KeyA","KeyS","KeyD","KeyE","Space"].includes(code)) event.preventDefault();
+  if (!heldKeys.has(code) && code === "KeyE") actionJustPressed = true;
+  if (!heldKeys.has(code) && (code === "KeyQ" || code === "Space")) dropJustPressed = true;
+  heldKeys.add(code);
+}, { passive: false });
+window.addEventListener("keyup", (event) => { heldKeys.delete(event.code); });
+function clearHeldInput() {
+  heldKeys.clear();
+  actionJustPressed = false;
+  dropJustPressed = false;
+  if (player && player.body) player.body.setVelocity(0, 0);
+}
+window.addEventListener("blur", clearHeldInput);
+document.addEventListener("visibilitychange", () => { if (document.hidden) clearHeldInput(); });
 const targetPositions=[[100,404],[100,750],[100,1096]];
 function updateScoreFrame(){
  const scoreEl=document.getElementById("scoreText"), billsEl=document.getElementById("tensBills");
@@ -177,7 +197,11 @@ function create(){
  this.posText=this.add.text(12,58,"",{fontSize:"13px",color:"#fff",backgroundColor:"#17251dcc",padding:6}).setScrollFactor(0).setDepth(200).setVisible(false);
 }
 function update(){
-if(carriedPumpkin){carriedPumpkin.setPosition(player.x,player.y+36);carriedPumpkinValue.setPosition(player.x,player.y+36);}let nearTarget=null;for(const c of targetCrates)if(c.active&&Phaser.Math.Distance.Between(player.x,player.y,c.x,c.y)<155){nearTarget=c;break;}deliveryLabel.setVisible(false);if(nearTarget){let rem=nearTarget.getData("target")-nearTarget.getData("sum");deliveryLabel.setText("").setPosition(nearTarget.x,nearTarget.y+100).setVisible(false);}if(nearTarget&&heldPumpkin!==null&&Phaser.Input.Keyboard.JustDown(keys.E)){let t=nearTarget.getData("target"),sum=nearTarget.getData("sum"),n=nearTarget.getData("count"),v=heldPumpkin;if(sum+v<=t&&n<3&&(n>0||sum+v<t)){nearTarget.setData("sum",sum+v);nearTarget.setData("count",n+1);nearTarget.getData("values").push(v);let cx=[-54,0,54][n],cont=nearTarget.getData("contents");cont.add([this.add.image(cx,-5,"pickup-pumpkin").setScale(0.82),this.add.text(cx,-5,String(v),{fontSize:"23px",fontStyle:"bold",color:"#24170b",stroke:"#ffd17b",strokeThickness:2}).setOrigin(.5)]);let rem=t-sum-v;nearTarget.getData("remainder").setText("");heldPumpkin=null;carriedPumpkin.destroy();carriedPumpkinValue.destroy();carriedPumpkin=carriedPumpkinValue=null;pickupHud.setText("Point: "+points+" | Græskar 0/1 | Stjerner "+Math.floor(points/10));if(rem===0){
+const actionPressed = actionJustPressed;
+const dropPressed = dropJustPressed;
+actionJustPressed = false;
+dropJustPressed = false;
+if(carriedPumpkin){carriedPumpkin.setPosition(player.x,player.y+36);carriedPumpkinValue.setPosition(player.x,player.y+36);}let nearTarget=null;for(const c of targetCrates)if(c.active&&Phaser.Math.Distance.Between(player.x,player.y,c.x,c.y)<155){nearTarget=c;break;}deliveryLabel.setVisible(false);if(nearTarget){let rem=nearTarget.getData("target")-nearTarget.getData("sum");deliveryLabel.setText("").setPosition(nearTarget.x,nearTarget.y+100).setVisible(false);}if(nearTarget&&heldPumpkin!==null&&actionPressed){let t=nearTarget.getData("target"),sum=nearTarget.getData("sum"),n=nearTarget.getData("count"),v=heldPumpkin;if(sum+v<=t&&n<3&&(n>0||sum+v<t)){nearTarget.setData("sum",sum+v);nearTarget.setData("count",n+1);nearTarget.getData("values").push(v);let cx=[-54,0,54][n],cont=nearTarget.getData("contents");cont.add([this.add.image(cx,-5,"pickup-pumpkin").setScale(0.82),this.add.text(cx,-5,String(v),{fontSize:"23px",fontStyle:"bold",color:"#24170b",stroke:"#ffd17b",strokeThickness:2}).setOrigin(.5)]);let rem=t-sum-v;nearTarget.getData("remainder").setText("");heldPumpkin=null;carriedPumpkin.destroy();carriedPumpkinValue.destroy();carriedPumpkin=carriedPumpkinValue=null;pickupHud.setText("Point: "+points+" | Græskar 0/1 | Stjerner "+Math.floor(points/10));if(rem===0){
  points++;
  const vals=nearTarget.getData("values")||[];let tenPairsFound=0,plusPairsFound=0;
  // Count all equal-number pairs (1+1, 2+2, etc.) and all 10er pairs inside completed expression, also with three numbers.
@@ -185,7 +209,7 @@ if(carriedPumpkin){carriedPumpkin.setPosition(player.x,player.y+36);carriedPumpk
  plusPairs+=plusPairsFound;tenFriendPairs+=tenPairsFound;
  updateScoreFrame();pickupHud.setText("Point: "+points+" | Græskar 0/1 | Stjerner "+Math.floor(points/10));const completedCrate=nearTarget;this.tweens.add({targets:completedCrate,scale:0,alpha:0,duration:400,ease:"Back.easeIn",onComplete:()=>{if(!completedCrate.active)return;const ix=completedCrate.getData("index");completedCrate.destroy();const fresh=makeTargetCrate(this,ix+3);fresh.setScale(0).setAlpha(0);targetCrates.push(fresh);this.tweens.add({targets:fresh,scale:1,alpha:1,duration:440,ease:"Back.easeOut"});}});}}else deliveryLabel.setText(n>=3?"Maks. 3 græskar i kassen":"Tallet er for stort — find et mindre græskar");}
  // E uden for en kasse: læg græskaret tilbage på jorden.
- if(heldPumpkin!==null&&!nearTarget&&Phaser.Input.Keyboard.JustDown(keys.E)){
+ if(heldPumpkin!==null&&((!nearTarget&&actionPressed)||dropPressed)){
   const value=heldPumpkin, dx=lastDir==="west"?-90:lastDir==="east"?90:0, dy=lastDir==="north"?-90:lastDir==="south"?90:0;
   const item=pickupPumpkins.create(Phaser.Math.Clamp(player.x+dx,30,WORLD_W-30),Phaser.Math.Clamp(player.y+dy,30,WORLD_H-30),"pickup-pumpkin").setScale(1.44).setDepth(80);
   item.setData("value",value);
@@ -195,10 +219,10 @@ if(carriedPumpkin){carriedPumpkin.setPosition(player.x,player.y+36);carriedPumpk
   pickupHud.setText("Point: "+points+" | Græskar 0/1 | Stjerner "+Math.floor(points/10));
  }
  const speed=390;let vx=0,vy=0;
- if(cursors.left.isDown||keys.A.isDown)vx=-1;
- else if(cursors.right.isDown||keys.D.isDown)vx=1;
- if(cursors.up.isDown||keys.W.isDown)vy=-1;
- else if(cursors.down.isDown||keys.S.isDown)vy=1;
+ if(heldKeys.has("ArrowLeft")||heldKeys.has("KeyA"))vx=-1;
+ else if(heldKeys.has("ArrowRight")||heldKeys.has("KeyD"))vx=1;
+ if(heldKeys.has("ArrowUp")||heldKeys.has("KeyW"))vy=-1;
+ else if(heldKeys.has("ArrowDown")||heldKeys.has("KeyS"))vy=1;
  if(vx&&vy){vx*=.7071;vy*=.7071;}
  if(vx<0)lastDir="west";else if(vx>0)lastDir="east";else if(vy<0)lastDir="north";else if(vy>0)lastDir="south";
  player.setVelocity(vx*speed,vy*speed);
